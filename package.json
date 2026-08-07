@@ -1,0 +1,23 @@
+{
+  "name": "@vault-flow/provider-api",
+  "version": "1.0.1",
+  "author": "TanMusong",
+  "description": "TypeScript type definitions for vault-flow provider development",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanMusong/vault-flow-provider-api.git"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "@types/node": "^26.0.0"
+  }
+}
