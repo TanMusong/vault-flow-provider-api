@@ -316,6 +316,8 @@ export interface ProviderContext {
   providerDir: string;
   /** Provider config directory path */
   configDir: string;
+  /** Global download directory path */
+  downloadDir: string;
   /** Current app locale (e.g. "zh-CN", "en-US") */
   locale: string;
   /** App version */
