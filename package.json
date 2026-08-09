@@ -1,6 +1,6 @@
 {
   "name": "@vault-flow/provider-api",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "TanMusong",
   "description": "TypeScript type definitions for vault-flow provider development",
   "repository": {
