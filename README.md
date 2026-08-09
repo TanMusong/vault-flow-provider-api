@@ -39,16 +39,11 @@ class MyProvider implements VaultProvider {
     return {
       success: true,
       name: 'username',
-      userId: '12345',
-      interval: (params.interval as number) || 1800,
     };
   }
 
   async deleteTask(ctx: ProviderContext, taskId: string): Promise<ProviderResult> {
-    if (ctx.hasPostDownloadRecord(taskId)) {
-      return { success: false, message: 'Task has downloads' };
-    }
-    ctx.storage.clear();
+    // Clean up any provider-specific data if needed
     return { success: true };
   }
 

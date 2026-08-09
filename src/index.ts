@@ -294,10 +294,6 @@ export interface AddTaskResult {
   success: true;
   /** Task display name (typically username) */
   name: string;
-  /** User ID on the platform */
-  userId: string;
-  /** Execution interval in seconds */
-  interval: number;
   /** Other provider-specific data */
   [key: string]: unknown;
 }
