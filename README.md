@@ -1,6 +1,6 @@
 # @vault-flow/provider-api
 
-TypeScript type definitions for Vault Flow media provider development.
+TypeScript type definitions for [Vault Flow](https://github.com/TanMusong/vault-flow) media provider development.
 
 ## Overview
 
