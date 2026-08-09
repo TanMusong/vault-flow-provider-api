@@ -320,6 +320,10 @@ export interface ProviderContext {
   providerDir: string;
   /** Provider config directory path */
   configDir: string;
+  /** Current app locale (e.g. "zh-CN", "en-US") */
+  locale: string;
+  /** App version */
+  version: string;
 
   /**
    * Add a download record.
