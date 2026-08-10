@@ -249,6 +249,13 @@ export interface ProviderContext {
   version: string;
 
   /**
+   * Save the entire task config to the database.
+   * Use this to update config during task execution (e.g., rewriting cookies after refresh).
+   * @param config - The complete config object to save
+   */
+  saveConfig(config: TaskConfig): void;
+
+  /**
    * Add a download record.
    * @param data - Download record data
    */
