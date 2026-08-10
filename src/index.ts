@@ -24,18 +24,6 @@ export enum TaskState {
 }
 
 /**
- * Task run state.
- */
-export enum RunState {
-  /** Idle, waiting for next schedule */
-  Idle = 0,
-  /** Currently running */
-  Running = 1,
-  /** Waiting to run (queued) */
-  Waiting = 2,
-}
-
-/**
  * Download record status.
  */
 export enum DownloadStatus {
@@ -71,18 +59,6 @@ export enum FileStatus {
   Failed = 'failed',
 }
 
-/**
- * Log level.
- */
-export enum LogLevel {
-  /** Informational message */
-  Info = 'info',
-  /** Warning message */
-  Warn = 'warn',
-  /** Error message */
-  Error = 'error',
-}
-
 // ─── Localized String ───
 
 /**
@@ -97,29 +73,6 @@ export enum LogLevel {
  * { "zh-CN": "抖音", "en-US": "Douyin" }
  */
 export type LocalizedString = string | Record<string, string>;
-
-// ─── Manifest ───
-
-/**
- * Provider manifest structure (manifest.json).
- * Each provider must include this file in its project root.
- */
-export interface ProviderManifest {
-  /** Unique provider identifier */
-  id: string;
-  /** Provider display name, supports multi-language */
-  name: LocalizedString;
-  /** Provider description, supports multi-language */
-  description: LocalizedString;
-  /** Associated media platform name, supports multi-language */
-  site: LocalizedString;
-  /** Path to icon file relative to provider root (e.g., "assets/icon.webp") */
-  icon: string;
-  /** Version check URL(s) for update checking. Can be a single URL or URL array */
-  version?: string | string[];
-  /** Provider config schema (used for UI rendering) */
-  config?: unknown[];
-}
 
 // ─── Download Types ───
 
@@ -167,8 +120,8 @@ export interface DownloadData {
 
 /**
  * Provider persistent storage interface.
- * Provides localStorage-like key-value storage, isolated per provider.
- * Data is stored in JSON files on disk.
+ * Key-value storage scoped to the current task, backed by JSON files on disk.
+ * Intended for provider-internal data (e.g., cursors, caches), not for task config.
  */
 export interface ProviderStorage {
   /**
@@ -203,40 +156,41 @@ export interface ProviderStorage {
   clear(): void;
 }
 
-// ─── Task (display-only, managed by server) ───
+// ─── Task Config ───
 
 /**
- * Task information, display-only, managed by server.
+ * Task configuration stored in the database.
+ * Contains all user-configured parameters for a task (cookies, downloadPath, etc.).
+ * Providers read this instead of using storage for config.
  */
-export interface Task {
-  /** Unique task identifier */
-  id: string;
-  /** Task display name */
-  name: string;
-  /** Associated provider identifier */
-  site: string;
-  /** Whether task is paused */
-  paused: boolean;
-  /** Execution interval in seconds */
-  interval: number;
-  /** Next execution time (ISO timestamp) */
-  next_run: string | null;
-  /** Last execution result state */
-  last_state: TaskState;
-  /** Current run state */
-  run_state: RunState;
-  /** Total downloaded size in bytes */
-  totalSize: number;
-  /** Download count */
-  downloadCount?: number;
+export interface TaskConfig {
+  [key: string]: unknown;
 }
 
-// ─── Task Result ───
+// ─── Provider Result Types ───
+
+/**
+ * Result of successfully adding a task.
+ */
+export interface AddTaskResult {
+  /** Operation succeeded */
+  success: true;
+  /** Task display name (typically username) */
+  name: string;
+}
+
+/**
+ * Result of successfully deleting a task.
+ */
+export interface DeleteTaskResult {
+  /** Operation succeeded */
+  success: true;
+}
 
 /**
  * Task execution result.
  */
-export interface TaskResult {
+export interface ExecuteTaskResult {
   /** Execution result state */
   state: TaskState;
   /** Result message */
@@ -251,75 +205,46 @@ export interface TaskResult {
   duration: number;
 }
 
-// ─── Provider Result Types ───
-
-/**
- * Provider operation success result.
- */
-export interface ProviderSuccessResult {
-  /** Operation succeeded */
-  success: true;
-}
-
 /**
  * Provider operation failure result.
+ * Returned when an operation fails. Server will reject config save on error.
  */
-export interface ProviderErrorResult {
+export interface TaskErrorResult {
   /** Operation failed */
   success: false;
   /** Error message */
   message: string;
 }
 
-/** Provider operation result (success or failure) */
-export type ProviderResult = ProviderSuccessResult | ProviderErrorResult;
-
-// ─── Add Task Params ───
-
-/**
- * Parameters for adding a task.
- */
-export interface AddTaskParams {
-  /** Execution interval in seconds */
-  interval?: number;
-  /** Other provider-specific parameters */
-  [key: string]: unknown;
-}
-
-/**
- * Result of successfully adding a task.
- */
-export interface AddTaskResult {
-  /** Operation succeeded */
-  success: true;
-  /** Task display name (typically username) */
-  name: string;
-  /** Other provider-specific data */
-  [key: string]: unknown;
-}
-
-/** Response from adding a task (success or failure) */
-export type AddTaskResponse = AddTaskResult | ProviderErrorResult;
-
 // ─── Provider Context ───
 
 /**
- * Provider context passed during task execution.
- * Contains all necessary utilities and state.
+ * Provider context passed during task operations.
+ * Contains all necessary utilities and state for a provider to execute its logic.
  */
 export interface ProviderContext {
   /** Current task ID */
   taskId: string;
-  /** Persistent storage interface */
+
+  /**
+   * Task configuration from the database.
+   * Contains all user-configured parameters (cookies, downloadPath, etc.).
+   * Providers should read config from here, not from storage.
+   */
+  config: TaskConfig;
+
+  /**
+   * Persistent storage for provider-internal data (cursors, caches, etc.).
+   * Scoped to the current task. Not intended for task config.
+   */
   storage: ProviderStorage;
-  /** Provider installation directory path */
-  providerDir: string;
-  /** Provider config directory path */
-  configDir: string;
+
   /** Global download directory path */
   downloadDir: string;
-  /** Current app locale (e.g. "zh-CN", "en-US") */
+
+  /** Current app locale (e.g. "zh-CN", "en-US"). Use for localized error messages. */
   locale: string;
+
   /** App version */
   version: string;
 
@@ -419,28 +344,37 @@ export interface ProviderContext {
  */
 export interface VaultProvider {
   /**
-   * Add a task. Validates parameters (e.g., checks cookies),
-   * returns task parameters or failure information.
-   * @param ctx - Provider context
-   * @param params - Task parameters
-   * @returns Task addition result
+   * Validate task creation. Checks cookies/credentials and returns task name.
+   * Do NOT save config here — server handles persistence after this returns success.
+   * @param ctx - Provider context with config from database
+   * @returns Task name on success, or error
    */
-  addTask(ctx: ProviderContext, params: AddTaskParams): Promise<AddTaskResponse>;
+  addTask(ctx: ProviderContext): Promise<AddTaskResult | TaskErrorResult>;
 
   /**
-   * Delete a task. Checks if deletion is possible, cleans up related files.
+   * Delete a task. Server has already verified no associated downloads exist.
    * @param ctx - Provider context
    * @param taskId - Task ID
    * @returns Deletion result
    */
-  deleteTask(ctx: ProviderContext, taskId: string): Promise<ProviderResult>;
+  deleteTask(ctx: ProviderContext, taskId: string): Promise<DeleteTaskResult | TaskErrorResult>;
 
   /**
-   * Execute a task. This is the main entry point for provider execution.
-   * @param ctx - Provider context
-   * @returns Task execution result
+   * Execute a task. Main download logic.
+   * @param ctx - Provider context with config
+   * @returns Execution result with stats
    */
-  executeTask(ctx: ProviderContext): Promise<TaskResult>;
+  executeTask(ctx: ProviderContext): Promise<ExecuteTaskResult>;
+
+  /**
+   * Called when task config is updated by the user.
+   * Implement if provider needs to react to config changes (e.g., re-validate cookies).
+   * Server saves config to database AFTER this returns success.
+   * @param ctx - Provider context with new config
+   * @param taskId - Task ID
+   * @returns Success or error — error prevents config from being saved
+   */
+  onTaskConfigUpdate(ctx: ProviderContext, taskId: string): Promise<DeleteTaskResult | TaskErrorResult>;
 }
 
 // ─── Provider Definition ───

@@ -10,8 +10,6 @@ This package defines the contract between the Vault Flow core and media provider
 
 ```bash
 npm install @vault-flow/provider-api
-# or
-pnpm add @vault-flow/provider-api
 ```
 
 ## Quick Start
@@ -21,33 +19,27 @@ import type {
   VaultProvider,
   ProviderContext,
   ProviderDefinition,
-  TaskResult,
-  AddTaskParams,
-  AddTaskResponse,
-  ProviderResult,
+  AddTaskResult,
+  DeleteTaskResult,
+  ExecuteTaskResult,
+  TaskErrorResult,
 } from '@vault-flow/provider-api';
 import { TaskState, DownloadStatus } from '@vault-flow/provider-api';
 
 class MyProvider implements VaultProvider {
-  async addTask(ctx: ProviderContext, params: AddTaskParams): Promise<AddTaskResponse> {
-    const cookies = params.cookies as string;
+  async addTask(ctx: ProviderContext): Promise<AddTaskResult | TaskErrorResult> {
+    const cookies = ctx.config.cookies as string;
     if (!cookies) {
       return { success: false, message: 'Cookies are required' };
     }
-    ctx.storage.set('cookies', cookies);
-
-    return {
-      success: true,
-      name: 'username',
-    };
+    return { success: true, name: 'username' };
   }
 
-  async deleteTask(ctx: ProviderContext, taskId: string): Promise<ProviderResult> {
-    // Clean up any provider-specific data if needed
+  async deleteTask(ctx: ProviderContext, taskId: string): Promise<DeleteTaskResult | TaskErrorResult> {
     return { success: true };
   }
 
-  async executeTask(ctx: ProviderContext): Promise<TaskResult> {
+  async executeTask(ctx: ProviderContext): Promise<ExecuteTaskResult> {
     const startTime = Date.now();
     return {
       state: TaskState.Success,
@@ -57,6 +49,10 @@ class MyProvider implements VaultProvider {
       total: 0,
       duration: Date.now() - startTime,
     };
+  }
+
+  async onTaskConfigUpdate(ctx: ProviderContext, taskId: string): Promise<DeleteTaskResult | TaskErrorResult> {
+    return { success: true };
   }
 }
 
@@ -84,12 +80,15 @@ vault-flow-provider-my-platform/
   "name": "@vault-flow/provider-my-platform",
   "version": "1.0.0",
   "main": "./dist/index.js",
+  "dependencies": {
+    "@vault-flow/provider-api": "^1.0.0"
+  }
 }
 ```
 
 ### manifest.json
 
-The manifest file is required and must be placed in the provider's project root.
+The manifest file is required and must be placed in the provider's project root. It defines metadata and config schema for UI rendering.
 
 ```json
 {
@@ -110,10 +109,40 @@ The manifest file is required and must be placed in the provider's project root.
   "version": "https://example.com/version.json",
   "config": [
     {
-      "key": "setting1",
-      "name": { "zh-CN": "设置项", "en-US": "Setting" },
-      "type": "text",
-      "placeholder": { "zh-CN": "请输入", "en-US": "Enter value" }
+      "key": "cookies",
+      "name": { "zh-CN": "Cookie", "en-US": "Cookie" },
+      "type": "textarea",
+      "placeholder": { "zh-CN": "请粘贴 Cookie", "en-US": "Paste your cookies" }
+    },
+    {
+      "key": "proxyEnabled",
+      "name": { "zh-CN": "代理", "en-US": "Proxy" },
+      "type": "checkbox",
+      "default": false,
+      "on": [
+        {
+          "key": "proxyType",
+          "name": { "zh-CN": "代理类型", "en-US": "Proxy Type" },
+          "type": "select",
+          "default": "socks5",
+          "values": [
+            { "key": "socks5", "name": { "zh-CN": "SOCKS5", "en-US": "SOCKS5" } },
+            { "key": "http", "name": { "zh-CN": "HTTP", "en-US": "HTTP" } }
+          ]
+        },
+        {
+          "key": "proxyHost",
+          "name": { "zh-CN": "代理地址", "en-US": "Proxy Host" },
+          "type": "text",
+          "default": "127.0.0.1"
+        },
+        {
+          "key": "proxyPort",
+          "name": { "zh-CN": "代理端口", "en-US": "Proxy Port" },
+          "type": "number",
+          "default": 7890
+        }
+      ]
     }
   ]
 }
@@ -129,7 +158,17 @@ The manifest file is required and must be placed in the provider's project root.
 | `site` | `LocalizedString` | Yes | Media platform name, supports multi-language |
 | `icon` | `string` | Yes | Path to icon file relative to provider root |
 | `version` | `string \| string[]` | No | Version check URL(s) for update checking |
-| `config` | `unknown[]` | No | Config schema for UI rendering |
+| `config` | `unknown[]` | No | Config schema for UI rendering. Config values are stored in the database by the server, not by the provider |
+
+#### Config Schema Types
+
+| Type | Description | Extra Fields |
+|------|-------------|--------------|
+| `text` | Single-line text input | `default`, `placeholder` |
+| `textarea` | Multi-line text input | `default`, `placeholder` |
+| `number` | Number input | `default` |
+| `checkbox` | Toggle switch | `default`, `on: ConfigItem[]`, `off: ConfigItem[]` |
+| `select` | Dropdown select | `default`, `values: { key: string, name: LocalizedString }[]` |
 
 ### Default Export
 
@@ -149,14 +188,6 @@ export default createMyProvider;
 | `Error = 0` | Task execution failed |
 | `Success = 1` | Task completed successfully |
 | `LoginExpired = 2` | Login session expired |
-
-### RunState
-
-| Value | Description |
-|-------|-------------|
-| `Idle = 0` | Idle, waiting for next schedule |
-| `Running = 1` | Currently running |
-| `Waiting = 2` | Waiting to run (queued) |
 
 ### DownloadStatus
 
@@ -182,32 +213,27 @@ export default createMyProvider;
 | `Success = 'success'` | Download completed |
 | `Failed = 'failed'` | Download failed |
 
-### LogLevel
-
-| Value | Description |
-|-------|-------------|
-| `Info = 'info'` | Informational message |
-| `Warn = 'warn'` | Warning message |
-| `Error = 'error'` | Error message |
-
 ## Core Interfaces
 
 ### VaultProvider
 
-| Method | Description |
-|--------|-------------|
-| `addTask(ctx, params)` | Add a task, validate parameters |
-| `deleteTask(ctx, taskId)` | Delete a task, clean up files |
-| `executeTask(ctx)` | Execute the download task |
+| Method | Description | Return Type |
+|--------|-------------|-------------|
+| `addTask(ctx)` | Validate task creation (cookies/credentials) | `AddTaskResult \| TaskErrorResult` |
+| `deleteTask(ctx, taskId)` | Clean up on task deletion | `DeleteTaskResult \| TaskErrorResult` |
+| `executeTask(ctx)` | Execute the download task | `ExecuteTaskResult` |
+| `onTaskConfigUpdate(ctx, taskId)` | React to config changes from user | `DeleteTaskResult \| TaskErrorResult` |
 
 ### ProviderContext
 
 | Property/Method | Description |
 |-----------------|-------------|
 | `taskId` | Current task ID |
-| `storage` | Persistent storage interface |
-| `providerDir` | Provider installation directory |
-| `configDir` | Provider config directory |
+| `config` | Task configuration from database (cookies, downloadPath, etc.) |
+| `storage` | Persistent storage for provider-internal data (cursors, caches) |
+| `downloadDir` | Global download directory path |
+| `locale` | Current app locale (e.g. "zh-CN") for localized messages |
+| `version` | App version |
 | `addDownloadRecord(data)` | Add a download record |
 | `updateDownloadRecord(id, data)` | Update a download record |
 | `emitDownloadProgress(id, files)` | Emit download progress event |
@@ -220,6 +246,8 @@ export default createMyProvider;
 
 ### ProviderStorage
 
+Storage is scoped to the current task and intended for provider-internal data (cursors, caches). Task config is managed by the server via `ctx.config`.
+
 | Method | Description |
 |--------|-------------|
 | `get<T>(key)` | Get value |
@@ -230,21 +258,20 @@ export default createMyProvider;
 
 ## Types Reference
 
-### Task
+### AddTaskResult
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | Unique task identifier |
-| `name` | `string` | Task display name |
-| `site` | `string` | Provider identifier |
-| `paused` | `boolean` | Whether task is paused |
-| `interval` | `number` | Execution interval (seconds) |
-| `next_run` | `string \| null` | Next execution time |
-| `last_state` | `TaskState` | Last execution result |
-| `run_state` | `RunState` | Current run state |
-| `totalSize` | `number` | Total downloaded size |
+| `success` | `true` | Operation succeeded |
+| `name` | `string` | Task display name (typically username) |
 
-### TaskResult
+### DeleteTaskResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `true` | Operation succeeded |
+
+### ExecuteTaskResult
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -254,6 +281,13 @@ export default createMyProvider;
 | `failed` | `number` | Failed downloads |
 | `total` | `number` | Total items processed |
 | `duration` | `number` | Execution time (ms) |
+
+### TaskErrorResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `false` | Operation failed |
+| `message` | `string` | Error message |
 
 ### DownloadFile
 
@@ -278,3 +312,9 @@ export default createMyProvider;
 | `stateMessage` | `string` | Status message |
 | `files` | `DownloadFile[]` | File list |
 | `dataJson` | `Record<string, unknown>` | Additional metadata |
+
+### TaskConfig
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `[key: string]` | `unknown` | Any user-configured parameter (cookies, downloadPath, etc.) |
